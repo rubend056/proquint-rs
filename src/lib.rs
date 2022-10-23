@@ -126,7 +126,7 @@ const UINT2VOWEL: &'static [char] = &['a', 'i', 'o', 'u'];
 const MASK_FIRST4_U16: u16 = 0xF000;
 const MASK_FIRST2_U16: u16 = 0xC000;
 
-const SEPARATOR: char = '-';
+const SEPARATOR: char = '_';
 
 /// Generic function for converting a proquint string to the given type.
 ///
