@@ -15,7 +15,7 @@
 //! use std::net::Ipv4Addr;
 //!
 //! let home = Ipv4Addr::new(127, 0, 0, 1);
-//! assert_eq!(home.to_quint(), "lusab-babad");
+//! assert_eq!(home.to_quint(), "lusab_babad");
 //! ```
 
 use std::error;
@@ -54,7 +54,7 @@ impl error::Error for QuintError {
         }
     }
 
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&dyn error::Error> {
         None
     }
 }
@@ -72,7 +72,7 @@ pub trait Quintable
     /// use proquint::Quintable;
     ///
     /// let foo: u32 = 12;
-    /// assert_eq!(foo.to_quint(), "babab-babas");
+    /// assert_eq!(foo.to_quint(), "babab_babas");
     /// ```
     fn to_quint(&self) -> String;
 
@@ -82,9 +82,9 @@ pub trait Quintable
     /// ```
     /// use proquint::Quintable;
     ///
-    /// assert_eq!(u32::from_quint("rotab-vinat").unwrap(), 3141592653u32);
+    /// assert_eq!(u32::from_quint("rotab_vinat").unwrap(), 3141592653u32);
     /// ```
-    fn from_quint(&str) -> Result<Self, QuintError>;
+    fn from_quint(_:&str) -> Result<Self, QuintError>;
 }
 
 macro_rules! decons {
@@ -131,7 +131,7 @@ const SEPARATOR: char = '_';
 /// Generic function for converting a proquint string to the given type.
 ///
 /// Returns the decoded type as well as the number of bits decoded. A full proquint is 16 bits, so a valid proquint will be a multiple of this size.
-pub fn from_quint<T>(quint: &str) -> (T, usize)
+pub fn from_quint<T>(quint: &str) -> Result<(T, usize), QuintError>
     where T: Sized + Default + ShlAssign<isize> + AddAssign<T> + From<u8>
 {
     let mut bitcounter = 0usize;
@@ -163,11 +163,14 @@ pub fn from_quint<T>(quint: &str) -> (T, usize)
             'u' => devowel!(res, bitcounter, T::from(3u8)),
 
             // separators
-            _ => (),
+            '_' | '-' => (),
+
+            // invalid character
+            _ => return Err(QuintError::InputInvalid),
         }
     }
 
-    (res, bitcounter)
+    Ok((res, bitcounter))
 }
 
 pub fn unquint_exactly<T>(quint: &str, bits: usize) -> Result<(T, usize), QuintError>
@@ -203,7 +206,10 @@ pub fn unquint_exactly<T>(quint: &str, bits: usize) -> Result<(T, usize), QuintE
             'u' => devowel!(res, bitcounter, T::from(3u8)),
 
             // separators
-            _ => (),
+            '_' | '-' => (),
+
+            // invalid character
+            _ => return Err(QuintError::InputInvalid),
         }
         if bitcounter >= bits {
             final_idx = i;
@@ -223,9 +229,14 @@ pub fn unquint_exactly<T>(quint: &str, bits: usize) -> Result<(T, usize), QuintE
 }
 
 macro_rules! impl_from_quint {
-    ($expected_bits:expr) => {
+    ($expected_bits:expr, $expected_chars:expr) => {
         fn from_quint(quint: &str) -> Result<Self, QuintError> {
-            let (res, bits) = from_quint(quint);
+            if quint.len() < $expected_chars {
+                return Err(QuintError::InputTooSmall);
+            } else if quint.len() > $expected_chars {
+                return Err(QuintError::InputTooLarge);
+            }
+            let (res, bits) = from_quint(quint)?;
             if bits == $expected_bits {
                 return Ok(res);
             }
@@ -254,7 +265,7 @@ impl Quintable for u16 {
         out
     }
 
-    impl_from_quint!(16);
+    impl_from_quint!(16, 5);
 }
 
 impl Quintable for u32 {
@@ -270,7 +281,7 @@ impl Quintable for u32 {
         out
     }
 
-    impl_from_quint!(32);
+    impl_from_quint!(32, 11);
 }
 
 impl Quintable for u64 {
@@ -292,7 +303,7 @@ impl Quintable for u64 {
         out
     }
 
-    impl_from_quint!(64);
+    impl_from_quint!(64, 23);
 }
 
 impl Quintable for std::net::Ipv4Addr {
@@ -324,21 +335,22 @@ impl Quintable for std::net::Ipv6Addr {
     }
 
     fn from_quint(quint: &str) -> Result<Self, QuintError> {
-        let q = &quint;
+        let mut q = quint;
+
         let (first, last_i) = unquint_exactly(q, 16)?;
-        let q = &q[last_i+1..];
+        q = &q[last_i+1..];
         let (second, last_i) = unquint_exactly(q, 16)?;
-        let q = &q[last_i+1..];
+        q = &q[last_i+1..];
         let (third, last_i) = unquint_exactly(q, 16)?;
-        let q = &q[last_i+1..];
+        q = &q[last_i+1..];
         let (fourth, last_i) = unquint_exactly(q, 16)?;
-        let q = &q[last_i+1..];
+        q = &q[last_i+1..];
         let (fifth, last_i) = unquint_exactly(q, 16)?;
-        let q = &q[last_i+1..];
+        q = &q[last_i+1..];
         let (sixth, last_i) = unquint_exactly(q, 16)?;
-        let q = &q[last_i+1..];
+        q = &q[last_i+1..];
         let (seventh, last_i) = unquint_exactly(q, 16)?;
-        let q = &q[last_i+1..];
+        q = &q[last_i+1..];
         let (eighth, _) = unquint_exactly(q, 16)?;
 
         Ok(std::net::Ipv6Addr::new(first, second, third, fourth, fifth, sixth, seventh, eighth))
@@ -353,16 +365,38 @@ mod tests {
 
     #[test]
     fn quint_too_small() {
+        assert_eq!(u16::from_quint("l").err(), Some(QuintError::InputTooSmall));
         assert_eq!(u16::from_quint("lub").err(), Some(QuintError::InputTooSmall));
         assert_eq!(u32::from_quint("lubab").err(), Some(QuintError::InputTooSmall));
-        assert_eq!(u64::from_quint("lubab-gutuz").err(), Some(QuintError::InputTooSmall));
+        assert_eq!(u64::from_quint("lubab_gutuz").err(), Some(QuintError::InputTooSmall));
     }
 
     #[test]
     fn quint_too_large() {
         assert_eq!(u16::from_quint("lubab-gutuz").err(), Some(QuintError::InputTooLarge));
-        assert_eq!(u32::from_quint("lubab-gutuz-kobim").err(), Some(QuintError::InputTooLarge));
-        assert_eq!(u64::from_quint("lubab-gutuz-kobim-fival-bison").err(), Some(QuintError::InputTooLarge));
+        assert_eq!(u32::from_quint("lubab_gutuz_kobim").err(), Some(QuintError::InputTooLarge));
+        assert_eq!(u64::from_quint("lubab_gutuz_kobim_fival_bison").err(), Some(QuintError::InputTooLarge));
+    }
+
+    #[test]
+    fn quint_invalid_characters() {
+        assert_eq!(u16::from_quint("xlars").err(), Some(QuintError::InputInvalid));
+        assert_eq!(u16::from_quint("mar.l").err(), Some(QuintError::InputInvalid));
+        assert_eq!(u16::from_quint("abcde").err(), Some(QuintError::InputInvalid));
+        assert_eq!(u16::from_quint("lubab!").err(), Some(QuintError::InputTooLarge));
+        assert_eq!(u16::from_quint("lub@b").err(), Some(QuintError::InputInvalid));
+    }
+    #[test]
+    fn quint_not_enough_chars() {
+        assert_eq!(u16::from_quint("tal").err(), Some(QuintError::InputTooSmall));
+        assert_eq!(u16::from_quint("t").err(), Some(QuintError::InputTooSmall));
+        assert_eq!(u16::from_quint("bals").err(), Some(QuintError::InputTooSmall));
+    }
+    #[test]
+    fn quint_too_many_chars() {
+        assert_eq!(u16::from_quint("talebox").err(), Some(QuintError::InputTooLarge));
+        assert_eq!(u32::from_quint("talex-babosl").err(), Some(QuintError::InputTooLarge));
+        assert_eq!(u32::from_quint("talex-baboslfd").err(), Some(QuintError::InputTooLarge));
     }
 
     fn ipv4_test(ipv4: [u8; 4], quint: &str) {
@@ -374,34 +408,34 @@ mod tests {
 
     #[test]
     fn ipv4_quints() {
-        // 127.0.0.1       lusab-babad
-        ipv4_test([127, 0, 0, 1], "lusab-babad");
-        // 63.84.220.193   gutih-tugad
-        ipv4_test([63, 84, 220, 193], "gutih-tugad");
-        // 63.118.7.35     gutuk-bisog
-        ipv4_test([63, 118, 7, 35], "gutuk-bisog");
-        // 140.98.193.141  mudof-sakat
-        ipv4_test([140, 98, 193, 141], "mudof-sakat");
-        // 64.255.6.200    haguz-biram
-        ipv4_test([64, 255, 6, 200], "haguz-biram");
-        // 128.30.52.45    mabiv-gibot
-        ipv4_test([128, 30, 52, 45], "mabiv-gibot");
-        // 147.67.119.2    natag-lisaf
-        ipv4_test([147, 67, 119, 2], "natag-lisaf");
-        // 212.58.253.68   tibup-zujah
-        ipv4_test([212, 58, 253, 68], "tibup-zujah");
-        // 216.35.68.215   tobog-higil
-        ipv4_test([216, 35, 68, 215], "tobog-higil");
-        // 216.68.232.21   todah-vobij
-        ipv4_test([216, 68, 232, 21], "todah-vobij");
-        // 198.81.129.136  sinid-makam
-        ipv4_test([198, 81, 129, 136], "sinid-makam");
-        // 12.110.110.204  budov-kuras
-        ipv4_test([12, 110, 110, 204], "budov-kuras");
+        // 127.0.0.1       lusab_babad
+        ipv4_test([127, 0, 0, 1], "lusab_babad");
+        // 63.84.220.193   gutih_tugad
+        ipv4_test([63, 84, 220, 193], "gutih_tugad");
+        // 63.118.7.35     gutuk_bisog
+        ipv4_test([63, 118, 7, 35], "gutuk_bisog");
+        // 140.98.193.141  mudof_sakat
+        ipv4_test([140, 98, 193, 141], "mudof_sakat");
+        // 64.255.6.200    haguz_biram
+        ipv4_test([64, 255, 6, 200], "haguz_biram");
+        // 128.30.52.45    mabiv_gibot
+        ipv4_test([128, 30, 52, 45], "mabiv_gibot");
+        // 147.67.119.2    natag_lisaf
+        ipv4_test([147, 67, 119, 2], "natag_lisaf");
+        // 212.58.253.68   tibup_zujah
+        ipv4_test([212, 58, 253, 68], "tibup_zujah");
+        // 216.35.68.215   tobog_higil
+        ipv4_test([216, 35, 68, 215], "tobog_higil");
+        // 216.68.232.21   todah_vobij
+        ipv4_test([216, 68, 232, 21], "todah_vobij");
+        // 198.81.129.136  sinid_makam
+        ipv4_test([198, 81, 129, 136], "sinid_makam");
+        // 12.110.110.204  budov_kuras
+        ipv4_test([12, 110, 110, 204], "budov_kuras");
     }
 
     fn back_and_forth<T>(xs: T) -> bool
-        where T: Quintable + PartialEq
+        where T: Quintable + PartialEq + std::fmt::Debug
     {
         let quint = xs.to_quint();
         let y = match T::from_quint(&quint) {
