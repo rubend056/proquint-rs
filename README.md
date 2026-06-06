@@ -17,7 +17,7 @@ use proquint::Quintable;
 use std::net::Ipv4Addr;
 
 let home = Ipv4Addr::new(127, 0, 0, 1);
-assert_eq!(home.to_quint(), "lusab-babad");
+assert_eq!(home.to_quint(), "lusab_babad");
 
-assert_eq!(u32::from_quint("rotab-vinat").unwrap(), 3141592653u32);
+assert_eq!(u32::from_quint("rotab_vinat").unwrap(), 3141592653u32);
 ```
