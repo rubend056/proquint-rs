@@ -6,7 +6,7 @@ Proquints are readable, pronouncable representations of identifiers. This is a R
 
 Read more about proquints: https://arxiv.org/html/0901.4016
 
-Ex. the ip address `127.0.0.1` is `lusab-babad` in proquint form.
+Ex. the ip address `127.0.0.1` is `lusab_babad` in proquint form.
 
 ## Usage
 
